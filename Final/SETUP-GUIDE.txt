@@ -1,0 +1,89 @@
+=====================================================
+LogiLink 360 - Setup Guide
+=====================================================
+
+## STEP 1: Database Setup (MySQL Workbench)
+
+1. Open MySQL Workbench
+2. Connect to your MySQL server (localhost)
+3. Open the file: database-setup.sql
+4. Run the entire script (Ctrl+Shift+Enter)
+5. Verify all tables are created by checking the output
+
+## STEP 2: Backend Setup
+
+1. Open Terminal/PowerShell
+2. Navigate to backend folder:
+   cd "c:\Users\ROG\Downloads\Final\backend"
+
+3. Install dependencies:
+   npm install
+
+4. Update .env file if needed:
+   DB_HOST=localhost
+   DB_USER=root
+   DB_PASSWORD=osura123
+   DB_NAME=logilink_360
+   PORT=5000
+
+5. Start the server:
+   npm run dev
+
+6. Verify backend is running:
+   Open browser: http://localhost:5000/api/health
+   Should show: {"status":"OK","message":"Server is running"}
+
+## STEP 3: Frontend Setup
+
+1. Open a NEW Terminal/PowerShell window
+2. Navigate to frontend folder:
+   cd "c:\Users\ROG\Downloads\Final\logilink-360"
+
+3. Install dependencies:
+   npm install
+
+4. Start the frontend:
+   npm run dev
+
+5. Open browser:
+   http://localhost:5173
+
+## FEATURES CONNECTED TO DATABASE
+
+✅ Dashboard - Real-time stats from database
+✅ Fleet Management - CRUD operations for vehicles
+✅ Driver Management - CRUD operations for drivers
+✅ Parcel Management - CRUD operations for parcels
+✅ Dispatch - Create trips with vehicle/driver assignment
+✅ Route Management - CRUD operations for routes
+✅ Reviews - CRUD operations for customer reviews
+✅ Loyalty Program - Customer management with auto tier calculation
+
+## DATABASE TABLES
+
+1. vehicles - Fleet vehicles
+2. drivers - Driver information
+3. parcels - Package/delivery tracking
+4. trips - Dispatch operations
+5. routes - Route planning
+6. reviews - Customer feedback
+7. customers - Loyalty program members
+
+## API ENDPOINTS
+
+All CRUD operations available at:
+- GET    /api/vehicles, /api/drivers, /api/parcels, etc.
+- POST   /api/vehicles, /api/drivers, /api/parcels, etc.
+- PUT    /api/vehicles/:id, /api/drivers/:id, etc.
+- DELETE /api/vehicles/:id, /api/drivers/:id, etc.
+
+## TROUBLESHOOTING
+
+If you get "Cannot connect to database":
+1. Check MySQL is running
+2. Verify .env credentials match your MySQL setup
+3. Run database-setup.sql again if tables are missing
+
+If ports are in use:
+- Backend: Change PORT in .env (default 5000)
+- Frontend: Will auto-select available port

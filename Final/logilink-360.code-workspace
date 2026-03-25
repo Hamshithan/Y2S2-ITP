@@ -1,0 +1,51 @@
+{
+  "folders": [
+    {
+      "name": "Frontend - LogiLink 360",
+      "path": "logilink-360"
+    },
+    {
+      "name": "Backend - API Server",
+      "path": "backend"
+    },
+    {
+      "name": "Root - Project Files",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.git": true,
+      "**/dist": true,
+      "**/build": true
+    },
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "emmet.includeLanguages": {
+      "javascript": "javascriptreact"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+      "dbaeumer.vscode-eslint",
+      "formulahendry.auto-rename-tag",
+      "christian-kohler.path-intellisense"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "type": "node",
+        "request": "launch",
+        "name": "Debug Backend",
+        "skipFiles": ["<node_internals>/**"],
+        "program": "${workspaceFolder:Backend - API Server}/server.js",
+        "cwd": "${workspaceFolder:Backend - API Server}"
+      }
+    ]
+  }
+}
