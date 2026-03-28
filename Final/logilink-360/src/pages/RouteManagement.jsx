@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { MapPin, Navigation, Clock, AlertTriangle, Package, Route, Plus, Pencil, Trash2 } from 'lucide-react'
+import { MapPin, Navigation, Clock, AlertTriangle, Package, Route, Plus, Pencil, Trash2, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,11 +10,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { routesAPI, parcelsAPI } from '@/services/api'
+import { routesAPI, parcelsAPI, tripsAPI } from '@/services/api'
+import DeliveryTrackingMap from '@/components/maps/DeliveryTrackingMap'
 
 export default function RouteManagement() {
   const [routes, setRoutes] = useState([])
   const [parcels, setParcels] = useState([])
+  const [trips, setTrips] = useState([])
+  const [mapRouteId, setMapRouteId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -37,15 +40,36 @@ export default function RouteManagement() {
     fetchData()
   }, [])
 
+  // Refresh trip GPS for the live map (like a dispatch screen polling drivers)
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const tripsData = await tripsAPI.getAll()
+        setTrips(tripsData)
+      } catch {
+        /* ignore background errors */
+      }
+    }, 8000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    if (routes.length > 0 && mapRouteId == null) {
+      setMapRouteId(routes[0].id)
+    }
+  }, [routes, mapRouteId])
+
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [routesData, parcelsData] = await Promise.all([
+      const [routesData, parcelsData, tripsData] = await Promise.all([
         routesAPI.getAll(),
-        parcelsAPI.getAll()
+        parcelsAPI.getAll(),
+        tripsAPI.getAll()
       ])
       setRoutes(routesData)
       setParcels(parcelsData)
+      setTrips(tripsData)
     } catch (error) {
       console.error('Error fetching data:', error)
       alert('Failed to load data from database')
@@ -138,6 +162,27 @@ export default function RouteManagement() {
     setStopsData(stopsData.filter((_, i) => i !== index))
   }
 
+  const selectedRouteForMap = routes.find((r) => r.id === mapRouteId) || null
+
+  const handleDemoDriverPing = async () => {
+    const active = trips.filter((t) => t.status === 'Active')
+    if (!active.length) {
+      alert('No active trip. Create one in Dispatch and set status to Active.')
+      return
+    }
+    const t = active[0]
+    const lat = 6.9271 + (Math.random() - 0.5) * 0.06
+    const lng = 79.8612 + (Math.random() - 0.5) * 0.06
+    try {
+      await tripsAPI.updateLocation(t.id, lat, lng)
+      const tripsData = await tripsAPI.getAll()
+      setTrips(tripsData)
+    } catch (e) {
+      console.error(e)
+      alert('Could not send demo location. Is the API running and DB migrated?')
+    }
+  }
+
   const getPriorityBadge = (priority) => {
     const variants = {
       'Critical': 'destructive',
@@ -213,92 +258,97 @@ export default function RouteManagement() {
         </Card>
       </div>
 
-      <div className="flex items-center justify-between">
-        <Tabs defaultValue="routes" className="w-full">
+      <Tabs defaultValue="routes" className="w-full space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <TabsList className="bg-muted border border-border">
             <TabsTrigger value="routes">Routes</TabsTrigger>
             <TabsTrigger value="urgent">Urgent Deliveries</TabsTrigger>
+            <TabsTrigger value="map">Live Map</TabsTrigger>
           </TabsList>
           <Button onClick={() => setIsAddDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Plus className="h-4 w-4 mr-2" />
             Add Route
           </Button>
-        </Tabs>
-      </div>
-      
-      <Tabs defaultValue="routes" className="w-full">
-        <TabsList className="bg-muted border border-border">
-          <TabsTrigger value="routes">Routes</TabsTrigger>
-          <TabsTrigger value="urgent">Urgent Deliveries</TabsTrigger>
-        </TabsList>
+        </div>
 
-        <TabsContent value="map" className="mt-4">
+        <TabsContent value="map" className="mt-0">
           <Card className="border-border bg-card">
             <CardHeader>
               <CardTitle className="text-foreground text-base flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                Delivery Locations Map
+                <Truck className="h-4 w-4" />
+                Live deliveries &amp; planned route
               </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Blue markers show drivers on active trips (last GPS from your backend). The line is the planned driving route
+                for the route you pick below — similar to dispatch maps in ride-hailing apps.
+              </p>
             </CardHeader>
-            <CardContent>
-              {/* Map Placeholder */}
-              <div className="aspect-video bg-card rounded-xl border border-border flex items-center justify-center relative overflow-hidden">
-                <div className="absolute inset-0 opacity-20">
-                  <svg className="w-full h-full" viewBox="0 0 800 400">
-                    {/* Grid lines */}
-                    {Array.from({ length: 20 }).map((_, i) => (
-                      <line key={`h-${i}`} x1="0" y1={i * 20} x2="800" y2={i * 20} stroke="#3f3f46" strokeWidth="0.5" />
-                    ))}
-                    {Array.from({ length: 40 }).map((_, i) => (
-                      <line key={`v-${i}`} x1={i * 20} y1="0" x2={i * 20} y2="400" stroke="#3f3f46" strokeWidth="0.5" />
-                    ))}
-                    {/* Route lines */}
-                    <path d="M 200 300 Q 300 250 400 200 T 600 150" stroke="#71717a" strokeWidth="2" fill="none" strokeDasharray="5,5" />
-                    <path d="M 200 300 Q 250 320 300 350 T 150 280" stroke="#71717a" strokeWidth="2" fill="none" strokeDasharray="5,5" />
-                  </svg>
-                </div>
-                <div className="text-center z-10">
-                  <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">Interactive Map Integration</p>
-                  <p className="text-sm text-muted-foreground mt-1">Connect to Google Maps or Mapbox API</p>
-                </div>
-                {/* Location markers */}
-                {[
-                  { x: '25%', y: '75%', label: 'Colombo' },
-                  { x: '50%', y: '50%', label: 'Kandy' },
-                  { x: '37.5%', y: '87.5%', label: 'Galle' },
-                  { x: '75%', y: '37.5%', label: 'Jaffna' },
-                  { x: '18.75%', y: '70%', label: 'Negombo' },
-                ].map((loc, idx) => (
-                  <div 
-                    key={idx}
-                    className="absolute flex flex-col items-center"
-                    style={{ left: loc.x, top: loc.y, transform: 'translate(-50%, -50%)' }}
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="space-y-2 min-w-[220px]">
+                  <Label>Planned route to draw on map</Label>
+                  <Select
+                    value={mapRouteId != null ? String(mapRouteId) : ''}
+                    onValueChange={(v) => setMapRouteId(Number(v))}
                   >
-                    <div className="h-3 w-3 rounded-full bg-accent border-2 border-border" />
-                    <span className="text-xs text-muted-foreground mt-1 whitespace-nowrap">{loc.label}</span>
-                  </div>
-                ))}
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a route" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {routes.map((r) => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {r.route_number} — {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="button" variant="outline" className="border-border" onClick={handleDemoDriverPing}>
+                  <Navigation className="h-4 w-4 mr-2" />
+                  Demo: ping driver GPS
+                </Button>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
-                {parcels.filter(p => p.status === 'In Transit' || p.status === 'Picked Up').slice(0, 5).map((parcel, idx) => (
-                  <div key={idx} className="p-3 bg-card rounded-lg border border-border">
-                    <div className="flex items-center gap-2 mb-2">
-                      <MapPin className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs font-medium text-foreground truncate">{parcel.destination}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      {getPriorityBadge('Normal')}
-                      <span className="text-xs text-muted-foreground">{parcel.tracking_id}</span>
-                    </div>
+              <DeliveryTrackingMap trips={trips} selectedRoute={selectedRouteForMap} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Active trips (GPS)</p>
+                  <ul className="mt-2 space-y-1 text-sm text-foreground">
+                    {trips
+                      .filter((t) => t.status === 'Active')
+                      .map((t) => (
+                        <li key={t.id} className="flex justify-between gap-2">
+                          <span>{t.trip_number}</span>
+                          <span className="text-muted-foreground truncate">
+                            {t.driver_lat != null && t.driver_lng != null
+                              ? `${Number(t.driver_lat).toFixed(4)}, ${Number(t.driver_lng).toFixed(4)}`
+                              : 'no GPS yet'}
+                          </span>
+                        </li>
+                      ))}
+                    {!trips.filter((t) => t.status === 'Active').length && (
+                      <li className="text-muted-foreground">No active trips</li>
+                    )}
+                  </ul>
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">In transit parcels</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {parcels
+                      .filter((p) => p.status === 'In Transit' || p.status === 'Picked Up')
+                      .slice(0, 6)
+                      .map((p) => (
+                        <Badge key={p.id} variant="secondary">
+                          {p.tracking_id}
+                        </Badge>
+                      ))}
                   </div>
-                ))}
+                </div>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="routes" className="mt-4">
+        <TabsContent value="routes" className="mt-0">
           <div className="grid gap-4">
             {routes.map((route) => (
               <Card key={route.id} className="border-border bg-card">
@@ -380,7 +430,7 @@ export default function RouteManagement() {
           </div>
         </TabsContent>
 
-        <TabsContent value="urgent" className="mt-4">
+        <TabsContent value="urgent" className="mt-0">
           <Card className="border-border bg-card">
             <CardHeader>
               <CardTitle className="text-foreground text-base flex items-center gap-2">

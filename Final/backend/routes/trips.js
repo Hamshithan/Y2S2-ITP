@@ -3,6 +3,42 @@ import pool from '../config/database.js';
 
 const router = express.Router();
 
+// Driver GPS ping (Uber-style) — place before GET /:id so "location" is not parsed as id
+router.patch('/:id/location', async (req, res) => {
+  try {
+    const tripId = req.params.id;
+    const lat = parseFloat(req.body.lat);
+    const lng = parseFloat(req.body.lng);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      return res.status(400).json({ error: 'lat and lng must be valid numbers' });
+    }
+    const [result] = await pool.query(
+      'UPDATE trips SET driver_lat = ?, driver_lng = ?, location_updated_at = NOW() WHERE id = ?',
+      [lat, lng, tripId]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Trip not found' });
+    }
+    const [rows] = await pool.query(
+      `
+      SELECT 
+        t.*,
+        v.vehicle_number,
+        d.name as driver_name
+      FROM trips t
+      LEFT JOIN vehicles v ON t.vehicle_id = v.id
+      LEFT JOIN drivers d ON t.driver_id = d.id
+      WHERE t.id = ?
+    `,
+      [tripId]
+    );
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Error updating trip location:', error);
+    res.status(500).json({ error: 'Failed to update location' });
+  }
+});
+
 // Get all trips with vehicle and driver info
 router.get('/', async (req, res) => {
   try {
@@ -76,11 +112,21 @@ router.get('/:id', async (req, res) => {
 // Create new trip
 router.post('/', async (req, res) => {
   try {
-    const { trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status, parcel_ids } = req.body;
+    const { trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status, parcel_ids, driver_lat, driver_lng } = req.body;
     
     const [result] = await pool.query(
-      'INSERT INTO trips (trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [trip_number || `TRIP-${Date.now()}`, vehicle_id, driver_id, route_description, total_weight, capacity_used, status || 'Active']
+      'INSERT INTO trips (trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status, driver_lat, driver_lng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        trip_number || `TRIP-${Date.now()}`,
+        vehicle_id,
+        driver_id,
+        route_description,
+        total_weight,
+        capacity_used,
+        status || 'Active',
+        driver_lat ?? null,
+        driver_lng ?? null,
+      ]
     );
     
     const tripId = result.insertId;
@@ -113,12 +159,12 @@ router.post('/', async (req, res) => {
 // Update trip
 router.put('/:id', async (req, res) => {
   try {
-    const { trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status, parcel_ids } = req.body;
+    const { trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status, parcel_ids, driver_lat, driver_lng } = req.body;
     const tripId = req.params.id;
     
     const [result] = await pool.query(
-      'UPDATE trips SET trip_number = ?, vehicle_id = ?, driver_id = ?, route_description = ?, total_weight = ?, capacity_used = ?, status = ? WHERE id = ?',
-      [trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status, tripId]
+      'UPDATE trips SET trip_number = ?, vehicle_id = ?, driver_id = ?, route_description = ?, total_weight = ?, capacity_used = ?, status = ?, driver_lat = COALESCE(?, driver_lat), driver_lng = COALESCE(?, driver_lng) WHERE id = ?',
+      [trip_number, vehicle_id, driver_id, route_description, total_weight, capacity_used, status, driver_lat ?? null, driver_lng ?? null, tripId]
     );
     
     if (result.affectedRows === 0) {

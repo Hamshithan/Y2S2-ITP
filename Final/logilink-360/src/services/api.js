@@ -89,6 +89,11 @@ export const tripsAPI = {
   delete: (id) => fetchAPI(`/trips/${id}`, {
     method: 'DELETE',
   }),
+  /** Uber-style driver GPS ping (PATCH /api/trips/:id/location) */
+  updateLocation: (id, lat, lng) => fetchAPI(`/trips/${id}/location`, {
+    method: 'PATCH',
+    body: JSON.stringify({ lat, lng }),
+  }),
 };
 
 // Routes API
