@@ -53,7 +53,7 @@ export default function Dispatch() {
       setParcels(parcelsData)
     } catch (error) {
       console.error('Error fetching data:', error)
-      alert('Failed to load data from database')
+      alert(error?.message || 'Failed to load data from database')
     } finally {
       setLoading(false)
     }

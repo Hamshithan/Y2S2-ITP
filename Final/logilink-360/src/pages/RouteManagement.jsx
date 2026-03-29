@@ -111,7 +111,7 @@ export default function RouteManagement() {
       setStopsData([])
     } catch (error) {
       console.error('Error updating route:', error)
-      alert('Failed to update route')
+      alert(error?.message || 'Failed to update route')
     }
   }
 
@@ -123,7 +123,7 @@ export default function RouteManagement() {
       setSelectedRoute(null)
     } catch (error) {
       console.error('Error deleting route:', error)
-      alert('Failed to delete route')
+      alert(error?.message || 'Failed to delete route')
     }
   }
 

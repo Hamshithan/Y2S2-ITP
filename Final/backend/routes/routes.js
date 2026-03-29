@@ -84,6 +84,9 @@ router.post('/', async (req, res) => {
     res.status(201).json(newRoute[0]);
   } catch (error) {
     console.error('Error creating route:', error);
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'A route with this route number already exists.' });
+    }
     res.status(500).json({ error: 'Failed to create route' });
   }
 });
