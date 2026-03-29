@@ -72,7 +72,7 @@ export default function RouteManagement() {
       setTrips(tripsData)
     } catch (error) {
       console.error('Error fetching data:', error)
-      alert('Failed to load data from database')
+      alert(error?.message || 'Failed to load data from database')
     } finally {
       setLoading(false)
     }
@@ -92,7 +92,7 @@ export default function RouteManagement() {
       setStopsData([])
     } catch (error) {
       console.error('Error creating route:', error)
-      alert('Failed to create route')
+      alert(error?.message || 'Failed to create route')
     }
   }
 
