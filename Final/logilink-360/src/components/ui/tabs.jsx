@@ -1,6 +1,8 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
+const TabsContext = React.createContext(null)
+
 const Tabs = ({ defaultValue, value, onValueChange, children, className }) => {
   const [tabValue, setTabValue] = React.useState(value || defaultValue)
   
@@ -10,40 +12,34 @@ const Tabs = ({ defaultValue, value, onValueChange, children, className }) => {
   }
 
   return (
-    <div className={cn("w-full", className)}>
-      {React.Children.map(children, child => {
-        if (child.type === TabsList) {
-          return React.cloneElement(child, { 
-            value: value || tabValue, 
-            onValueChange: handleValueChange 
-          })
-        }
-        if (child.type === TabsContent) {
-          return (value || tabValue) === child.props.value ? child : null
-        }
-        return child
-      })}
-    </div>
+    <TabsContext.Provider value={{ value: value !== undefined ? value : tabValue, onValueChange: handleValueChange }}>
+      <div className={cn("w-full", className)}>
+        {children}
+      </div>
+    </TabsContext.Provider>
   )
 }
 
-const TabsList = React.forwardRef(({ className, children, value, onValueChange, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-zinc-800/50 p-1 text-zinc-400",
-      className
-    )}
-    {...props}
-  >
-    {React.Children.map(children, child => 
-      React.cloneElement(child, { 
-        isActive: child.props.value === value,
-        onClick: () => onValueChange?.(child.props.value)
-      })
-    )}
-  </div>
-))
+const TabsList = React.forwardRef(({ className, children, ...props }, ref) => {
+  const { value, onValueChange } = React.useContext(TabsContext)
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "inline-flex h-9 items-center justify-center rounded-lg bg-zinc-800/50 p-1 text-zinc-400",
+        className
+      )}
+      {...props}
+    >
+      {React.Children.map(children, child => 
+        React.cloneElement(child, { 
+          isActive: child.props.value === value,
+          onClick: () => onValueChange?.(child.props.value)
+        })
+      )}
+    </div>
+  )
+})
 TabsList.displayName = "TabsList"
 
 const TabsTrigger = React.forwardRef(({ className, isActive, onClick, children, ...props }, ref) => (
@@ -64,15 +60,19 @@ const TabsTrigger = React.forwardRef(({ className, isActive, onClick, children, 
 ))
 TabsTrigger.displayName = "TabsTrigger"
 
-const TabsContent = React.forwardRef(({ className, children, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn("mt-4 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", className)}
-    {...props}
-  >
-    {children}
-  </div>
-))
+const TabsContent = React.forwardRef(({ className, children, value, ...props }, ref) => {
+  const context = React.useContext(TabsContext)
+  if (context.value !== value) return null
+  return (
+    <div
+      ref={ref}
+      className={cn("mt-4 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", className)}
+      {...props}
+    >
+      {children}
+    </div>
+  )
+})
 TabsContent.displayName = "TabsContent"
 
 export { Tabs, TabsList, TabsTrigger, TabsContent }

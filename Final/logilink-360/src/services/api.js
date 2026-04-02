@@ -122,6 +122,10 @@ export const routesAPI = {
   delete: (id) => fetchAPI(`/routes/${id}`, {
     method: 'DELETE',
   }),
+  optimize: (id, params) => fetchAPI(`/routes/${id}/optimize`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  }),
 };
 
 // Reviews API

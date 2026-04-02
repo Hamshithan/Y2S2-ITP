@@ -20,6 +20,7 @@ const driverIcon = (label) =>
       background:#2563eb;color:#fff;border:2px solid #fff;border-radius:50%;
       width:32px;height:32px;display:flex;align-items:center;justify-content:center;
       font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.4);
+      transition: all 0.2s ease;
     ">${label}</div>`,
     iconSize: [32, 32],
     iconAnchor: [16, 16],
@@ -37,6 +38,20 @@ const stopIcon = (num, isStart) =>
     iconAnchor: [14, 14],
   })
 
+// Hardcoded paths for the mock simulation for the main routes.
+const ROUTE_PATHS = {
+  'ROUTE-001': [ // Colombo -> Kandy -> Jaffna
+    [6.9271, 79.8612], [7.05, 80.00], [7.2541, 80.5186], [7.2906, 80.6337], 
+    [7.4675, 80.6234], [7.8731, 80.6511], [8.3114, 80.4037], [8.7514, 80.4971], 
+    [9.3803, 80.3770], [9.6615, 80.0255]
+  ],
+  'ROUTE-002': [ // Colombo -> Galle -> Negombo
+    [6.9271, 79.8612], [6.8406, 79.9576], [6.6713, 80.0886], [6.3353, 80.1251], 
+    [6.0535, 80.2210], [6.3353, 80.1251], [6.8406, 79.9576], [6.9271, 79.8612], 
+    [7.1706, 79.8860], [7.2008, 79.8737]
+  ]
+}
+
 async function geocode(location) {
   const query = encodeURIComponent(location + ', Sri Lanka')
   const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`
@@ -48,13 +63,21 @@ async function geocode(location) {
   return null
 }
 
-export default function DeliveryTrackingMap({ trips = [], selectedRoute = null }) {
+export default function DeliveryTrackingMap({ trips = [], routes = [], selectedRouteId = null }) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const layersRef = useRef([])
+  const animationRef = useRef(null)
   const [mapReady, setMapReady] = useState(false)
 
-  // Init map with delay so the tab is fully visible first
+  // Determine which routes to display
+  const displayRoutes = useMemo(() => {
+    if (!routes || routes.length === 0) return []
+    if (selectedRouteId) return routes.filter(r => r.id === selectedRouteId)
+    return routes
+  }, [routes, selectedRouteId])
+
+  // Init map
   useEffect(() => {
     const timer = setTimeout(() => {
       if (mapInstanceRef.current || !mapRef.current) return
@@ -65,8 +88,9 @@ export default function DeliveryTrackingMap({ trips = [], selectedRoute = null }
         zoomControl: true,
       })
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
         maxZoom: 19,
       }).addTo(map)
 
@@ -87,113 +111,162 @@ export default function DeliveryTrackingMap({ trips = [], selectedRoute = null }
     }
   }, [])
 
-  const activeTrips = useMemo(
-    () => (trips || []).filter(
-      (t) => t.status === 'Active' &&
-        t.driver_lat != null && t.driver_lng != null &&
-        !Number.isNaN(Number(t.driver_lat)) && !Number.isNaN(Number(t.driver_lng))
-    ),
-    [trips]
-  )
-
   useEffect(() => {
-    if (!mapReady) return
+    if (!mapReady || !mapInstanceRef.current) return
     const map = mapInstanceRef.current
-    if (!map) return
 
+    // Clear previous layers
     layersRef.current.forEach((l) => map.removeLayer(l))
     layersRef.current = []
+    if (animationRef.current) {
+      clearInterval(animationRef.current)
+    }
 
     const bounds = L.latLngBounds([])
+    const activeRouteMarkers = [] // For animating simulated drivers
 
-    activeTrips.forEach((trip) => {
-      const lat = Number(trip.driver_lat)
-      const lng = Number(trip.driver_lng)
-      const label = trip.trip_number?.replace('TRIP-', '') || String(trip.id)
-      const marker = L.marker([lat, lng], { icon: driverIcon(label) })
-        .addTo(map)
-        .bindPopup(`<b>${trip.trip_number || 'Trip'}</b><br/>Driver: ${trip.driver_name || '—'}<br/>GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`)
-      layersRef.current.push(marker)
-      bounds.extend([lat, lng])
-    })
-
-    if (selectedRoute) {
-      const stops = selectedRoute.stops_data || []
-      let addresses = stops.map((s) => (s.location || '').trim()).filter(Boolean)
-      if (addresses.length < 2 && selectedRoute.start_location && selectedRoute.end_location) {
-        addresses = [selectedRoute.start_location, selectedRoute.end_location]
-      }
-
-      if (addresses.length >= 2) {
-        ;(async () => {
-          const coords = []
+    ;(async () => {
+      // 1. Draw Routes and Stops
+      for (const route of displayRoutes) {
+        const routeNumber = route.route_number
+        let pathCoords = []
+        
+        // Use Mock path if available, else geocode
+        if (ROUTE_PATHS[routeNumber]) {
+          pathCoords = ROUTE_PATHS[routeNumber]
+        } else {
+          // Geocode fallback based on original implementation
+          const stops = route.stops_data || []
+          let addresses = stops.map((s) => (s.location || '').trim()).filter(Boolean)
+          if (addresses.length < 2 && route.start_location && route.end_location) {
+            addresses = [route.start_location, route.end_location]
+          }
           for (let i = 0; i < addresses.length; i++) {
             const latlng = await geocode(addresses[i])
-            if (latlng) coords.push({ latlng, label: addresses[i], idx: i })
+            if (latlng) pathCoords.push(latlng)
           }
+        }
 
-          if (!mapInstanceRef.current) return
+        if (pathCoords.length >= 2) {
+          // Polylines
+          const lineList = pathCoords.map(c => L.latLng(c[0], c[1]))
+          const line = L.polyline(lineList, { 
+              color: routeNumber === 'ROUTE-001' ? '#ef4444' : '#3b82f6', 
+              weight: 5, 
+              opacity: 0.8, 
+              dashArray: '10, 5' 
+          }).addTo(map)
+          
+          line.bindPopup(`<b>${route.route_number}</b><br/>${route.name}<br/>Est: ${route.estimated_time}`)
+          layersRef.current.push(line)
+          lineList.forEach(ll => bounds.extend(ll))
 
-          coords.forEach(({ latlng, label, idx }) => {
-            const marker = L.marker(latlng, { icon: stopIcon(idx + 1, idx === 0) })
-              .addTo(mapInstanceRef.current)
-              .bindPopup(`<b>Stop ${idx + 1}</b><br/>${label}`)
-            layersRef.current.push(marker)
-            bounds.extend(latlng)
+          // Draw stops at first and last point
+          const startMarker = L.marker(lineList[0], { icon: stopIcon('S', true) })
+            .addTo(map).bindPopup(`<b>Start</b><br/>${route.start_location}`)
+          layersRef.current.push(startMarker)
+          
+          const endMarker = L.marker(lineList[lineList.length - 1], { icon: stopIcon('E', false) })
+            .addTo(map).bindPopup(`<b>End</b><br/>${route.end_location}`)
+          layersRef.current.push(endMarker)
+
+          // 2. Add an animated Driver Marker for this Route
+          const driverId = routeNumber.split('-')[1] || route.id
+          const marker = L.marker(lineList[0], { icon: driverIcon(driverId) })
+            .addTo(map)
+            .bindPopup(`<b>Driver Active</b><br/>Route: ${route.name}<br/>ETA: ${route.estimated_time}`)
+          layersRef.current.push(marker)
+          
+          activeRouteMarkers.push({
+            marker,
+            path: lineList,
+            stepIndex: 0,
+            progress: 0
           })
-
-          if (coords.length >= 2) {
-            const line = L.polyline(
-              coords.map((c) => c.latlng),
-              { color: '#6366f1', weight: 4, opacity: 0.8, dashArray: '8,4' }
-            ).addTo(mapInstanceRef.current)
-            layersRef.current.push(line)
-          }
-
-          if (bounds.isValid()) {
-            mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60] })
-          }
-        })()
-        return
+        }
       }
-    }
 
-    if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [60, 60] })
-    }
-  }, [activeTrips, selectedRoute, mapReady])
+      // 3. Fallback for trips (if we had actual API trips not mapped to routes)
+      trips.filter(t => t.status === 'Active' && !displayRoutes.some(r => r.route_number.includes(t.trip_number?.split('-')[1] || 'xxx'))).forEach(trip => {
+        if (trip.driver_lat && trip.driver_lng) {
+            const lat = Number(trip.driver_lat)
+            const lng = Number(trip.driver_lng)
+            if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+                const label = trip.trip_number?.replace('TRIP-', '') || String(trip.id)
+                const marker = L.marker([lat, lng], { icon: driverIcon(label) })
+                .addTo(map)
+                .bindPopup(`<b>${trip.trip_number || 'Trip'}</b><br/>Driver: ${trip.driver_name || '—'}<br/>GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`)
+                layersRef.current.push(marker)
+                bounds.extend([lat, lng])
+            }
+        }
+      })
+
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40] })
+      }
+
+      // 4. Animate the markers along the mocked routes
+      if (activeRouteMarkers.length > 0) {
+        animationRef.current = setInterval(() => {
+          activeRouteMarkers.forEach(driver => {
+            const path = driver.path
+            if (path.length < 2) return
+
+            // Simple Linear interpolation animation
+            driver.progress += 0.05 // speed
+            if (driver.progress >= 1) {
+                driver.progress = 0
+                driver.stepIndex = (driver.stepIndex + 1)
+                // When reaching the end, reverse direction to simulate continuous moving
+                if (driver.stepIndex >= path.length - 1) {
+                   driver.path.reverse() // ping-pong
+                   driver.stepIndex = 0
+                }
+            }
+
+            const current = path[driver.stepIndex]
+            const next = path[driver.stepIndex + 1]
+            
+            const newLat = current.lat + (next.lat - current.lat) * driver.progress
+            const newLng = current.lng + (next.lng - current.lng) * driver.progress
+            
+            driver.marker.setLatLng([newLat, newLng])
+          })
+        }, 100)
+      }
+
+    })()
+
+  }, [trips, displayRoutes, mapReady])
 
   return (
-    <div className="space-y-3">
+    <div className="w-full h-full flex flex-col items-stretch space-y-0 relative min-h-[500px]">
       <div
         ref={mapRef}
-        style={{
-          width: '100%',
-          height: '500px',
-          borderRadius: '12px',
-          border: '1px solid var(--border)',
-          background: '#1a1a2e',
-        }}
+        className="w-full h-full absolute inset-0 rounded-b-lg border-t border-border bg-[#1a1a2e]"
       />
-      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-2">
-          <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', background: '#2563eb', border: '2px solid white' }} />
-          Active trip (last GPS ping)
-        </span>
-        <span className="flex items-center gap-2">
-          <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', background: '#16a34a', border: '2px solid white' }} />
-          Start stop
-        </span>
-        <span className="flex items-center gap-2">
-          <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', background: '#6366f1', border: '2px solid white' }} />
-          Delivery stop
-        </span>
-        {selectedRoute && (
-          <span className="flex items-center gap-2">
-            <span style={{ display: 'inline-block', width: 24, height: 2, background: '#6366f1' }} />
-            Planned route: {selectedRoute.name}
-          </span>
-        )}
+      <div className="absolute bottom-4 left-4 z-[400] flex flex-wrap gap-2 text-xs bg-background/90 backdrop-blur-md p-3 rounded-lg border border-border shadow-lg max-w-[90%]">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-blue-600 border border-white" />
+          <span className="text-foreground font-medium">Van/Lorry</span>
+        </div>
+        <div className="flex items-center gap-2 ml-4">
+          <div className="w-3 h-3 rounded-full bg-green-600 border border-white" />
+          <span className="text-foreground font-medium">Start</span>
+        </div>
+        <div className="flex items-center gap-2 ml-4">
+          <div className="w-3 h-3 rounded-full bg-indigo-500 border border-white" />
+          <span className="text-foreground font-medium">Delivery</span>
+        </div>
+        <div className="flex items-center gap-2 ml-4">
+          <div className="w-6 h-1 bg-red-500" />
+          <span className="text-foreground font-medium">Critical/High</span>
+        </div>
+        <div className="flex items-center gap-2 ml-4">
+          <div className="w-6 h-1 bg-blue-500" />
+          <span className="text-foreground font-medium">Medium/Low</span>
+        </div>
       </div>
     </div>
   )
