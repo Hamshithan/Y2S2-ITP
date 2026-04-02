@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { MapPin, Navigation, Clock, AlertTriangle, Package, Route, Plus, Pencil, Trash2, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -35,6 +35,22 @@ export default function RouteManagement() {
   })
   const [stopsData, setStopsData] = useState([])
 
+  const routeNameSuggestions = useMemo(() => {
+    const names = routes.map((r) => r.name).filter(Boolean)
+    return [...new Set(names)].slice(0, 20)
+  }, [routes])
+
+  const locationSuggestions = useMemo(() => {
+    const routeLocations = routes.flatMap((r) => [r.start_location, r.end_location])
+    const parcelLocations = parcels.flatMap((p) => [p.origin, p.destination])
+    const stopLocations = routes.flatMap((r) => (r.stops_data || []).map((s) => s.location))
+    const allLocations = [...routeLocations, ...parcelLocations, ...stopLocations]
+      .filter(Boolean)
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+    return [...new Set(allLocations)].slice(0, 30)
+  }, [routes, parcels])
+
   // Fetch data from database
   useEffect(() => {
     fetchData()
@@ -62,17 +78,34 @@ export default function RouteManagement() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [routesData, parcelsData, tripsData] = await Promise.all([
+      const [routesResult, parcelsResult, tripsResult] = await Promise.allSettled([
         routesAPI.getAll(),
         parcelsAPI.getAll(),
         tripsAPI.getAll()
       ])
-      setRoutes(routesData)
-      setParcels(parcelsData)
-      setTrips(tripsData)
+
+      if (routesResult.status === 'fulfilled') {
+        setRoutes(routesResult.value)
+      } else {
+        throw routesResult.reason
+      }
+
+      if (parcelsResult.status === 'fulfilled') {
+        setParcels(parcelsResult.value)
+      } else {
+        setParcels([])
+        console.error('Error fetching parcels:', parcelsResult.reason)
+      }
+
+      if (tripsResult.status === 'fulfilled') {
+        setTrips(tripsResult.value)
+      } else {
+        setTrips([])
+        console.error('Error fetching trips:', tripsResult.reason)
+      }
     } catch (error) {
       console.error('Error fetching data:', error)
-      alert(error?.message || 'Failed to load data from database')
+      alert('Failed to load data from database')
     } finally {
       setLoading(false)
     }
@@ -86,13 +119,13 @@ export default function RouteManagement() {
         stops_data: stopsData
       }
       await routesAPI.create(data)
-      await fetchData()
       setIsAddDialogOpen(false)
       setFormData({ route_number: '', name: '', start_location: '', end_location: '', distance: '', estimated_time: '', priority: 'Normal', stops: 0 })
       setStopsData([])
+      await fetchData()
     } catch (error) {
       console.error('Error creating route:', error)
-      alert(error?.message || 'Failed to create route')
+      alert('Failed to create route')
     }
   }
 
@@ -104,14 +137,14 @@ export default function RouteManagement() {
         stops_data: stopsData
       }
       await routesAPI.update(selectedRoute.id, data)
-      await fetchData()
       setIsEditDialogOpen(false)
       setSelectedRoute(null)
       setFormData({ route_number: '', name: '', start_location: '', end_location: '', distance: '', estimated_time: '', priority: 'Normal', stops: 0 })
       setStopsData([])
+      await fetchData()
     } catch (error) {
       console.error('Error updating route:', error)
-      alert(error?.message || 'Failed to update route')
+      alert('Failed to update route')
     }
   }
 
@@ -123,7 +156,7 @@ export default function RouteManagement() {
       setSelectedRoute(null)
     } catch (error) {
       console.error('Error deleting route:', error)
-      alert(error?.message || 'Failed to delete route')
+      alert('Failed to delete route')
     }
   }
 
@@ -271,83 +304,6 @@ export default function RouteManagement() {
           </Button>
         </div>
 
-        <TabsContent value="map" className="mt-0">
-          <Card className="border-border bg-card">
-            <CardHeader>
-              <CardTitle className="text-foreground text-base flex items-center gap-2">
-                <Truck className="h-4 w-4" />
-                Live deliveries &amp; planned route
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Blue markers show drivers on active trips (last GPS from your backend). The line is the planned driving route
-                for the route you pick below — similar to dispatch maps in ride-hailing apps.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                <div className="space-y-2 min-w-[220px]">
-                  <Label>Planned route to draw on map</Label>
-                  <Select
-                    value={mapRouteId != null ? String(mapRouteId) : ''}
-                    onValueChange={(v) => setMapRouteId(Number(v))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a route" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {routes.map((r) => (
-                        <SelectItem key={r.id} value={String(r.id)}>
-                          {r.route_number} — {r.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="button" variant="outline" className="border-border" onClick={handleDemoDriverPing}>
-                  <Navigation className="h-4 w-4 mr-2" />
-                  Demo: ping driver GPS
-                </Button>
-              </div>
-              <DeliveryTrackingMap trips={trips} selectedRoute={selectedRouteForMap} />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Active trips (GPS)</p>
-                  <ul className="mt-2 space-y-1 text-sm text-foreground">
-                    {trips
-                      .filter((t) => t.status === 'Active')
-                      .map((t) => (
-                        <li key={t.id} className="flex justify-between gap-2">
-                          <span>{t.trip_number}</span>
-                          <span className="text-muted-foreground truncate">
-                            {t.driver_lat != null && t.driver_lng != null
-                              ? `${Number(t.driver_lat).toFixed(4)}, ${Number(t.driver_lng).toFixed(4)}`
-                              : 'no GPS yet'}
-                          </span>
-                        </li>
-                      ))}
-                    {!trips.filter((t) => t.status === 'Active').length && (
-                      <li className="text-muted-foreground">No active trips</li>
-                    )}
-                  </ul>
-                </div>
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">In transit parcels</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {parcels
-                      .filter((p) => p.status === 'In Transit' || p.status === 'Picked Up')
-                      .slice(0, 6)
-                      .map((p) => (
-                        <Badge key={p.id} variant="secondary">
-                          {p.tracking_id}
-                        </Badge>
-                      ))}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="routes" className="mt-0">
           <div className="grid gap-4">
             {routes.map((route) => (
@@ -468,6 +424,86 @@ export default function RouteManagement() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="map" className="mt-0">
+          <Card className="border-border bg-card">
+            <CardHeader>
+              <CardTitle className="text-foreground text-base flex items-center gap-2">
+                <Truck className="h-4 w-4" />
+                Live deliveries &amp; planned route
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Blue markers show drivers on active trips (last GPS from your backend). The line is the planned driving route
+                for the route you pick below — similar to dispatch maps in ride-hailing apps.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="space-y-2 min-w-[220px]">
+                  <Label>Planned route to draw on map</Label>
+                  <Select
+                    value={mapRouteId != null ? String(mapRouteId) : ''}
+                    onValueChange={(v) => setMapRouteId(Number(v))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a route" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {routes.map((r) => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {r.route_number} — {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="button" variant="outline" className="border-border" onClick={handleDemoDriverPing}>
+                  <Navigation className="h-4 w-4 mr-2" />
+                  Demo: ping driver GPS
+                </Button>
+              </div>
+              <DeliveryTrackingMap trips={trips} selectedRoute={selectedRouteForMap} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Active trips (GPS)</p>
+                  <ul className="mt-2 space-y-1 text-sm text-foreground">
+                    {trips
+                      .filter((t) => t.status === 'Active')
+                      .map((t) => (
+                        <li key={t.id} className="flex justify-between gap-2">
+                          <span>{t.trip_number}</span>
+                          <span className="text-muted-foreground truncate">
+                            {t.driver_lat != null && t.driver_lng != null
+                              ? `${Number(t.driver_lat).toFixed(4)}, ${Number(t.driver_lng).toFixed(4)}`
+                              : 'no GPS yet'}
+                          </span>
+                        </li>
+                      ))}
+                    {!trips.filter((t) => t.status === 'Active').length && (
+                      <li className="text-muted-foreground">No active trips</li>
+                    )}
+                  </ul>
+                </div>
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">In transit parcels</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {parcels
+                      .filter((p) => p.status === 'In Transit' || p.status === 'Picked Up')
+                      .slice(0, 6)
+                      .map((p) => (
+                        <Badge key={p.id} variant="secondary">
+                          {p.tracking_id}
+                        </Badge>
+                      ))}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+
+
       </Tabs>
 
       {/* Add Route Dialog */}
@@ -492,7 +528,13 @@ export default function RouteManagement() {
                 placeholder="e.g., Colombo → Kandy → Jaffna"
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
+                list="route-name-suggestions"
               />
+              <datalist id="route-name-suggestions">
+                {routeNameSuggestions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -501,6 +543,7 @@ export default function RouteManagement() {
                   placeholder="e.g., Colombo Warehouse"
                   value={formData.start_location}
                   onChange={(e) => setFormData({...formData, start_location: e.target.value})}
+                  list="location-suggestions"
                 />
               </div>
               <div className="space-y-2">
@@ -509,6 +552,7 @@ export default function RouteManagement() {
                   placeholder="e.g., Jaffna"
                   value={formData.end_location}
                   onChange={(e) => setFormData({...formData, end_location: e.target.value})}
+                  list="location-suggestions"
                 />
               </div>
             </div>
@@ -560,6 +604,7 @@ export default function RouteManagement() {
                     placeholder="Location"
                     value={stop.location}
                     onChange={(e) => updateStop(idx, 'location', e.target.value)}
+                    list="location-suggestions"
                   />
                   <Select value={stop.type} onValueChange={(value) => updateStop(idx, 'type', value)}>
                     <SelectTrigger>
@@ -581,6 +626,11 @@ export default function RouteManagement() {
                   </Button>
                 </div>
               ))}
+              <datalist id="location-suggestions">
+                {locationSuggestions.map((location) => (
+                  <option key={location} value={location} />
+                ))}
+              </datalist>
             </div>
           </div>
           <DialogFooter>
@@ -611,7 +661,13 @@ export default function RouteManagement() {
               <Input 
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
+                list="route-name-suggestions"
               />
+              <datalist id="route-name-suggestions">
+                {routeNameSuggestions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -619,6 +675,7 @@ export default function RouteManagement() {
                 <Input 
                   value={formData.start_location}
                   onChange={(e) => setFormData({...formData, start_location: e.target.value})}
+                  list="location-suggestions"
                 />
               </div>
               <div className="space-y-2">
@@ -626,6 +683,7 @@ export default function RouteManagement() {
                 <Input 
                   value={formData.end_location}
                   onChange={(e) => setFormData({...formData, end_location: e.target.value})}
+                  list="location-suggestions"
                 />
               </div>
             </div>
@@ -675,6 +733,7 @@ export default function RouteManagement() {
                     placeholder="Location"
                     value={stop.location}
                     onChange={(e) => updateStop(idx, 'location', e.target.value)}
+                    list="location-suggestions"
                   />
                   <Select value={stop.type} onValueChange={(value) => updateStop(idx, 'type', value)}>
                     <SelectTrigger>
@@ -696,6 +755,11 @@ export default function RouteManagement() {
                   </Button>
                 </div>
               ))}
+              <datalist id="location-suggestions">
+                {locationSuggestions.map((location) => (
+                  <option key={location} value={location} />
+                ))}
+              </datalist>
             </div>
           </div>
           <DialogFooter>

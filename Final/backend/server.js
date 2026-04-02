@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import pool from './config/database.js';
 import dashboardRoutes from './routes/dashboard.js';
 import driverRoutes from './routes/drivers.js';
 import vehicleRoutes from './routes/vehicles.js';
@@ -41,20 +40,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-async function start() {
-  try {
-    await pool.query('SELECT 1');
-    console.log('Database connection OK');
-  } catch (err) {
-    console.error('Database connection failed:', err.message);
-    console.error('Fix DB_HOST, DB_USER, DB_PASSWORD, DB_NAME in backend/.env and ensure MySQL is running.');
-    process.exit(1);
-  }
-
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-    console.log(`API available at http://localhost:${PORT}/api`);
-  });
-}
-
-start();
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+  console.log(`API available at http://localhost:${PORT}/api`);
+});

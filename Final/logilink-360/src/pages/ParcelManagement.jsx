@@ -54,7 +54,7 @@ export default function ParcelManagement() {
       setVehicles(vehiclesData)
     } catch (error) {
       console.error('Error fetching data:', error)
-      alert(error?.message || 'Failed to load data from database')
+      alert('Failed to load data from database')
     } finally {
       setLoading(false)
     }

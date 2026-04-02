@@ -2,41 +2,29 @@ const API_BASE_URL = '/api';
 
 // Helper function for API calls
 async function fetchAPI(endpoint, options = {}) {
-  let response;
-  try {
-    response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      ...options,
-    });
-  } catch (e) {
-    const msg = e?.message === 'Failed to fetch' || e?.name === 'TypeError'
-      ? 'Cannot reach the API. Start the backend (port 5000) and keep the Vite dev server proxy enabled.'
-      : e.message;
-    throw new Error(msg);
-  }
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    ...options,
+  });
 
   if (!response.ok) {
-    let message = `Request failed (${response.status})`;
+    let details = '';
     try {
-      const body = await response.json();
-      if (body && typeof body.error === 'string') {
-        message = body.error;
-      }
+      const errorData = await response.json();
+      details = errorData?.error || errorData?.message || '';
     } catch {
-      /* use status fallback */
+      // Response is not JSON; keep status-only message.
     }
-    throw new Error(message);
+    throw new Error(`API error: ${response.status}${details ? ` - ${details}` : ''}`);
   }
 
-  const text = await response.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
+  if (response.status === 204) {
+    return null;
   }
+
+  return response.json();
 }
 
 // Dashboard API
